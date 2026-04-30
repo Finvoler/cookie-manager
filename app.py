@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import ctypes
 import json
 import os
 import secrets
@@ -10,6 +11,7 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 from tkinter import Canvas, TclError, messagebox
+from ctypes import wintypes
 
 import customtkinter as ctk
 from cryptography.fernet import Fernet, InvalidToken
@@ -42,6 +44,89 @@ def app_dir() -> Path:
 
 
 VAULT_FILE = app_dir() / "vault.dat"
+REMEMBERED_PASSWORD_FILE = app_dir() / "remembered_password.dat"
+
+
+class DataBlob(ctypes.Structure):
+    _fields_ = [("cbData", wintypes.DWORD), ("pbData", ctypes.POINTER(ctypes.c_char))]
+
+
+def dpapi_available() -> bool:
+    return os.name == "nt"
+
+
+def _blob_from_bytes(data: bytes) -> tuple[DataBlob, ctypes.Array]:
+    buffer = ctypes.create_string_buffer(data)
+    blob = DataBlob(len(data), ctypes.cast(buffer, ctypes.POINTER(ctypes.c_char)))
+    return blob, buffer
+
+
+def dpapi_protect(data: bytes) -> bytes:
+    if not dpapi_available():
+        raise RuntimeError("DPAPI is only available on Windows.")
+    crypt32 = ctypes.WinDLL("crypt32", use_last_error=True)
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    input_blob, _buffer = _blob_from_bytes(data)
+    output_blob = DataBlob()
+    ok = crypt32.CryptProtectData(
+        ctypes.byref(input_blob),
+        ctypes.c_wchar_p(APP_NAME),
+        None,
+        None,
+        None,
+        0,
+        ctypes.byref(output_blob),
+    )
+    if not ok:
+        raise ctypes.WinError(ctypes.get_last_error())
+    try:
+        return ctypes.string_at(output_blob.pbData, output_blob.cbData)
+    finally:
+        kernel32.LocalFree(output_blob.pbData)
+
+
+def dpapi_unprotect(data: bytes) -> bytes:
+    if not dpapi_available():
+        raise RuntimeError("DPAPI is only available on Windows.")
+    crypt32 = ctypes.WinDLL("crypt32", use_last_error=True)
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    input_blob, _buffer = _blob_from_bytes(data)
+    output_blob = DataBlob()
+    ok = crypt32.CryptUnprotectData(ctypes.byref(input_blob), None, None, None, None, 0, ctypes.byref(output_blob))
+    if not ok:
+        raise ctypes.WinError(ctypes.get_last_error())
+    try:
+        return ctypes.string_at(output_blob.pbData, output_blob.cbData)
+    finally:
+        kernel32.LocalFree(output_blob.pbData)
+
+
+def save_remembered_password(password: str) -> None:
+    encrypted = dpapi_protect(password.encode("utf-8"))
+    payload = {
+        "version": 1,
+        "provider": "windows-dpapi-current-user",
+        "data": base64.b64encode(encrypted).decode("utf-8"),
+    }
+    REMEMBERED_PASSWORD_FILE.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def load_remembered_password() -> str | None:
+    try:
+        raw = json.loads(REMEMBERED_PASSWORD_FILE.read_text(encoding="utf-8"))
+        if raw.get("provider") != "windows-dpapi-current-user":
+            return None
+        encrypted = base64.b64decode(raw["data"])
+        return dpapi_unprotect(encrypted).decode("utf-8")
+    except (OSError, KeyError, ValueError, json.JSONDecodeError, UnicodeDecodeError):
+        return None
+
+
+def clear_remembered_password() -> None:
+    try:
+        REMEMBERED_PASSWORD_FILE.unlink()
+    except FileNotFoundError:
+        pass
 
 
 class VaultError(Exception):
@@ -222,18 +307,21 @@ class LoginWindow(ctk.CTk):
         self.password_var = ctk.StringVar()
         self.confirm_var = ctk.StringVar()
         self.show_password_var = ctk.BooleanVar(value=False)
+        self.remember_password_var = ctk.BooleanVar(value=REMEMBERED_PASSWORD_FILE.exists())
         self.is_new = not VAULT_FILE.exists()
 
         self.title(APP_NAME)
-        self.geometry("540x460")
+        self.geometry("540x500")
         self.resizable(False, False)
         self._build()
+        if not self.is_new and REMEMBERED_PASSWORD_FILE.exists():
+            self.after(250, self._try_auto_unlock)
 
     def _build(self) -> None:
         bg = GradientCanvas(self, ("#e9f6ff", "#f7efff", "#fff8ed"))
         bg.place(relx=0, rely=0, relwidth=1, relheight=1)
 
-        card = ctk.CTkFrame(self, width=430, height=340, corner_radius=30, fg_color="#fbfdff", border_width=1, border_color="#dce7f3")
+        card = ctk.CTkFrame(self, width=430, height=390, corner_radius=30, fg_color="#fbfdff", border_width=1, border_color="#dce7f3")
         card.place(relx=0.5, rely=0.5, anchor="center")
         card.grid_propagate(False)
         card.grid_columnconfigure(0, weight=1)
@@ -255,10 +343,29 @@ class LoginWindow(ctk.CTk):
             button_row = 4
             button_text = "解锁保险库"
 
-        ctk.CTkSwitch(card, text="显示主密码", variable=self.show_password_var, command=self._toggle_password, progress_color=COLORS["primary"], font=("Microsoft YaHei UI", 12)).grid(row=button_row - 1, column=0, sticky="w", padx=30, pady=(0, 16))
+        switches = ctk.CTkFrame(card, fg_color="transparent")
+        switches.grid(row=button_row - 1, column=0, sticky="ew", padx=30, pady=(0, 16))
+        ctk.CTkSwitch(switches, text="显示主密码", variable=self.show_password_var, command=self._toggle_password, progress_color=COLORS["primary"], font=("Microsoft YaHei UI", 12)).pack(side="left")
+        ctk.CTkSwitch(switches, text="记住并下次自动解锁", variable=self.remember_password_var, progress_color=COLORS["primary"], font=("Microsoft YaHei UI", 12)).pack(side="right")
         HoverButton(card, text=button_text, height=48, corner_radius=18, fg_color=COLORS["primary"], hover_color=COLORS["primary_hover"], font=("Microsoft YaHei UI", 14, "bold"), hover_scale=1.05, command=self._submit).grid(row=button_row, column=0, sticky="ew", padx=30, pady=(0, 18))
-        ctk.CTkLabel(card, text="数据只保存在本机，主密码不会被保存", font=("Microsoft YaHei UI", 12), text_color=COLORS["muted"]).grid(row=button_row + 1, column=0, sticky="w", padx=30)
+        safety_text = "记住密码时会用当前 Windows 用户账户加密保存；可在主界面随时清除。" if dpapi_available() else "当前系统不支持安全记住密码，请手动输入主密码。"
+        ctk.CTkLabel(card, text=safety_text, font=("Microsoft YaHei UI", 12), text_color=COLORS["muted"], wraplength=360, justify="left").grid(row=button_row + 1, column=0, sticky="w", padx=30)
         self.bind("<Return>", lambda _event: self._submit())
+
+    def _try_auto_unlock(self) -> None:
+        remembered_password = load_remembered_password()
+        if not remembered_password:
+            clear_remembered_password()
+            self.remember_password_var.set(False)
+            return
+        try:
+            self.vault = Vault.open(VAULT_FILE, remembered_password)
+        except VaultError:
+            clear_remembered_password()
+            self.remember_password_var.set(False)
+            messagebox.showwarning("自动解锁失败", "已记住的密码无法解锁当前保险库，已清除本地记住项。")
+            return
+        self.destroy()
 
     def _toggle_password(self) -> None:
         show = "" if self.show_password_var.get() else "*"
@@ -283,6 +390,17 @@ class LoginWindow(ctk.CTk):
         except VaultError as exc:
             messagebox.showerror("无法解锁", str(exc))
             return
+
+        if self.remember_password_var.get():
+            if not dpapi_available():
+                messagebox.showwarning("无法记住密码", "当前系统不支持 Windows DPAPI，未保存主密码。")
+            else:
+                try:
+                    save_remembered_password(password)
+                except OSError as exc:
+                    messagebox.showwarning("无法记住密码", f"系统加密保存失败：{exc}")
+        else:
+            clear_remembered_password()
         self.destroy()
 
 
@@ -346,9 +464,12 @@ class MainWindow(ctk.CTk):
         ctk.CTkLabel(title_box, text="Cookie 与账号密码管理器", font=("Microsoft YaHei UI", 25, "bold"), text_color=COLORS["ink"]).pack(anchor="w")
         ctk.CTkLabel(title_box, text="离线加密保存账号、密码、备注、网站 Cookie、Token 或其它密钥文本。", font=("Microsoft YaHei UI", 13), text_color=COLORS["muted"]).pack(anchor="w", pady=(3, 0))
 
-        status = ctk.CTkFrame(header, corner_radius=18, fg_color="#ffffff", border_width=1, border_color=COLORS["line"])
-        status.grid(row=0, column=1, sticky="e")
+        actions = ctk.CTkFrame(header, fg_color="transparent")
+        actions.grid(row=0, column=1, sticky="e")
+        status = ctk.CTkFrame(actions, corner_radius=18, fg_color="#ffffff", border_width=1, border_color=COLORS["line"])
+        status.pack(side="left", padx=(0, 10))
         ctk.CTkLabel(status, textvariable=self.status_var, font=("Microsoft YaHei UI", 12), text_color=COLORS["muted"]).pack(padx=16, pady=10)
+        HoverButton(actions, text="清除记住密码", width=126, height=38, corner_radius=16, border_width=1, border_color="#c9d8e8", fg_color="#ffffff", hover_color="#eef5ff", text_color=COLORS["muted"], font=("Microsoft YaHei UI", 12, "bold"), hover_border_color=COLORS["line_focus"], command=self.clear_remembered_master_password).pack(side="left")
 
     def _build_nav(self, shell: ctk.CTkFrame) -> None:
         nav = ctk.CTkFrame(shell, height=66, corner_radius=26, fg_color="#ffffff", border_width=1, border_color="#bcd0e8")
@@ -394,6 +515,11 @@ class MainWindow(ctk.CTk):
         self.toast.place(relx=0.5, rely=0.92, anchor="center")
         self.toast.lift()
         self.toast_after_id = self.after(1600, self.toast.place_forget)
+
+    def clear_remembered_master_password(self) -> None:
+        clear_remembered_password()
+        self.status_var.set("已清除记住的主密码")
+        self.show_toast("已清除记住的主密码")
 
     def _card(self, parent, title: str, subtitle: str | None = None) -> ctk.CTkFrame:
         card = ctk.CTkFrame(parent, corner_radius=26, fg_color=COLORS["card"], border_width=1, border_color=COLORS["line"])

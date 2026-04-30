@@ -12,6 +12,7 @@ Cookie Manager keeps data on your own machine. Records are stored in an encrypte
 - Entry fields for name, account, password, notes, and full cookie / extra information.
 - Keyword search across entry names and notes.
 - Show / hide password controls.
+- Optional remembered master password on Windows, protected by Windows DPAPI for the current user.
 - Strong password generator.
 - Copy account, password, or cookie content to the clipboard.
 - Delete saved entries.
@@ -69,9 +70,11 @@ The build script creates a local `.venv` so PyInstaller dependencies do not need
 
 - Your vault is saved as `vault.dat` next to the source script, or next to the `.exe` when running the packaged app.
 - The vault is encrypted with a key derived from your master password using PBKDF2-HMAC-SHA256 and Fernet encryption.
-- The master password is never stored.
+- By default, the master password is not stored.
+- If you enable "remember and auto unlock" on Windows, the master password is saved in `remembered_password.dat` after Windows DPAPI current-user encryption. It is intended to be decryptable only by the same Windows user account.
+- You can clear the remembered master password from the app header at any time.
 - If you forget the master password, existing vault data cannot be recovered.
-- Do not commit or publish `vault.dat`; it is ignored by default.
+- Do not commit or publish `vault.dat` or `remembered_password.dat`; both are ignored by default.
 
 This is a lightweight personal tool. For high-risk production credentials, consider a professionally audited password manager.
 

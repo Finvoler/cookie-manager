@@ -6,4 +6,5 @@ dist/
 *.spec
 pyinstaller-build.log
 vault.dat
+remembered_password.dat
 *.exe
