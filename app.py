@@ -20,14 +20,16 @@ APP_NAME = "Cookie Manager"
 VAULT_MARKER = "cookie-manager-vault-v1"
 
 COLORS = {
-    "ink": "#1b2430",
-    "muted": "#687385",
+    "ink": "#102033",
+    "muted": "#526175",
     "card": "#fbfdff",
-    "line": "#dce7f3",
-    "line_focus": "#8bb6f5",
-    "primary": "#2f6df6",
-    "primary_hover": "#245ad2",
-    "primary_soft": "#e9f1ff",
+    "line": "#c8d8ea",
+    "line_focus": "#5d8df7",
+    "primary": "#155eef",
+    "primary_hover": "#0f46bd",
+    "primary_soft": "#dcebff",
+    "surface": "#eef6ff",
+    "surface_hover": "#d8e9ff",
     "danger": "#e5484d",
     "danger_soft": "#fff0f0",
 }
@@ -152,7 +154,7 @@ class GradientCanvas(Canvas):
 def setup_window(window: ctk.CTk | ctk.CTkToplevel) -> None:
     ctk.set_appearance_mode("light")
     ctk.set_default_color_theme("blue")
-    window.configure(fg_color="#eef5ff")
+    window.configure(fg_color="#e7f1fc")
 
 
 def bind_select_all(widget: ctk.CTkTextbox) -> None:
@@ -169,12 +171,58 @@ def bind_select_all(widget: ctk.CTkTextbox) -> None:
     widget.bind("<Control-A>", select_all)
 
 
+def bind_readonly_text(widget: ctk.CTkTextbox) -> None:
+    def protect(event):
+        if event.state & 0x4 and event.keysym.lower() in {"a", "c"}:
+            return None
+        if event.keysym in {"Left", "Right", "Up", "Down", "Home", "End", "Prior", "Next"}:
+            return None
+        return "break"
+
+    widget.bind("<Key>", protect)
+
+
 def set_textbox_text(widget: ctk.CTkTextbox, text: str, disabled: bool = False) -> None:
     widget.configure(state="normal")
     widget.delete("1.0", "end")
     widget.insert("1.0", text)
     if disabled:
         widget.configure(state="disabled")
+
+
+class HoverButton(ctk.CTkButton):
+    def __init__(self, *args, hover_scale: float = 1.04, hover_border_color: str | None = None, **kwargs):
+        kwargs.setdefault("cursor", "hand2")
+        self.normal_width = kwargs.get("width")
+        self.normal_height = kwargs.get("height")
+        self.hover_scale = hover_scale
+        self.hover_border_color = hover_border_color
+        self.normal_border_color = kwargs.get("border_color")
+        super().__init__(*args, **kwargs)
+        self.bind("<Enter>", self._enter)
+        self.bind("<Leave>", self._leave)
+
+    def _enter(self, _event=None) -> None:
+        updates = {}
+        if isinstance(self.normal_width, int) and self.normal_width > 0:
+            updates["width"] = int(self.normal_width * self.hover_scale)
+        if isinstance(self.normal_height, int) and self.normal_height > 0:
+            updates["height"] = int(self.normal_height * self.hover_scale)
+        if self.hover_border_color:
+            updates["border_color"] = self.hover_border_color
+        if updates:
+            self.configure(**updates)
+
+    def _leave(self, _event=None) -> None:
+        updates = {}
+        if isinstance(self.normal_width, int):
+            updates["width"] = self.normal_width
+        if isinstance(self.normal_height, int):
+            updates["height"] = self.normal_height
+        if self.normal_border_color:
+            updates["border_color"] = self.normal_border_color
+        if updates:
+            self.configure(**updates)
 
 
 class LoginWindow(ctk.CTk):
@@ -219,7 +267,7 @@ class LoginWindow(ctk.CTk):
             button_text = "解锁保险库"
 
         ctk.CTkSwitch(card, text="显示主密码", variable=self.show_password_var, command=self._toggle_password, progress_color=COLORS["primary"], font=("Microsoft YaHei UI", 12)).grid(row=button_row - 1, column=0, sticky="w", padx=30, pady=(0, 16))
-        ctk.CTkButton(card, text=button_text, height=48, corner_radius=18, fg_color=COLORS["primary"], hover_color=COLORS["primary_hover"], font=("Microsoft YaHei UI", 14, "bold"), command=self._submit).grid(row=button_row, column=0, sticky="ew", padx=30, pady=(0, 18))
+        HoverButton(card, text=button_text, height=48, corner_radius=18, fg_color=COLORS["primary"], hover_color=COLORS["primary_hover"], font=("Microsoft YaHei UI", 14, "bold"), hover_scale=1.05, command=self._submit).grid(row=button_row, column=0, sticky="ew", padx=30, pady=(0, 18))
         ctk.CTkLabel(card, text="数据只保存在本机，主密码不会被保存", font=("Microsoft YaHei UI", 12), text_color=COLORS["muted"]).grid(row=button_row + 1, column=0, sticky="w", padx=30)
         self.bind("<Return>", lambda _event: self._submit())
 
@@ -263,6 +311,7 @@ class MainWindow(ctk.CTk):
         self.show_form_password = ctk.BooleanVar(value=False)
         self.show_detail_password = ctk.BooleanVar(value=False)
         self.result_buttons: dict[str, ctk.CTkButton] = {}
+        self.nav_buttons: dict[str, HoverButton] = {}
 
         self.title(APP_NAME)
         self.geometry("1180x760")
@@ -271,7 +320,7 @@ class MainWindow(ctk.CTk):
         self.refresh_results()
 
     def _build(self) -> None:
-        bg = GradientCanvas(self, ("#e8f6ff", "#f5efff", "#fff9ee"))
+        bg = GradientCanvas(self, ("#dcefff", "#f2f7ff", "#fff4df"))
         bg.place(relx=0, rely=0, relwidth=1, relheight=1)
 
         shell = ctk.CTkFrame(self, fg_color="transparent")
@@ -311,23 +360,41 @@ class MainWindow(ctk.CTk):
         ctk.CTkLabel(status, textvariable=self.status_var, font=("Microsoft YaHei UI", 12), text_color=COLORS["muted"]).pack(padx=16, pady=10)
 
     def _build_nav(self, shell: ctk.CTkFrame) -> None:
-        nav = ctk.CTkFrame(shell, height=58, corner_radius=24, fg_color="#fbfdff", border_width=1, border_color="#dce7f3")
+        nav = ctk.CTkFrame(shell, height=66, corner_radius=26, fg_color="#ffffff", border_width=1, border_color="#bcd0e8")
         nav.grid(row=1, column=0, sticky="ew", pady=(0, 18))
         nav.grid_propagate(False)
         nav.grid_columnconfigure(0, weight=1)
 
-        self.segment = ctk.CTkSegmentedButton(nav, values=["保存资料", "搜索查看"], selected_color=COLORS["primary"], selected_hover_color=COLORS["primary_hover"], unselected_color="#edf4fb", unselected_hover_color="#e2ecf6", corner_radius=18, height=38, font=("Microsoft YaHei UI", 13, "bold"), command=self._switch_page)
-        self.segment.grid(row=0, column=0, sticky="w", padx=10, pady=10)
-        self.segment.set("保存资料")
+        nav_left = ctk.CTkFrame(nav, fg_color="#e8f2ff", corner_radius=22, border_width=1, border_color="#bad0eb")
+        nav_left.grid(row=0, column=0, sticky="w", padx=12, pady=10)
+        for index, page_name in enumerate(("保存资料", "搜索查看")):
+            button = HoverButton(
+                nav_left,
+                text=page_name,
+                width=128,
+                height=42,
+                corner_radius=19,
+                border_width=1,
+                border_color="#b8cae1",
+                fg_color="#ffffff",
+                hover_color=COLORS["surface_hover"],
+                text_color=COLORS["ink"],
+                font=("Microsoft YaHei UI", 14, "bold"),
+                hover_scale=1.06,
+                hover_border_color=COLORS["line_focus"],
+                command=lambda name=page_name: self._switch_page(name),
+            )
+            button.grid(row=0, column=index, padx=(4, 2), pady=4)
+            self.nav_buttons[page_name] = button
 
-        ctk.CTkLabel(nav, text="文字区域支持鼠标选择、Ctrl+A、Ctrl+C", font=("Microsoft YaHei UI", 12), text_color=COLORS["muted"]).grid(row=0, column=1, sticky="e", padx=18)
+        ctk.CTkLabel(nav, text="详情可拖选复制，也可点一键复制", font=("Microsoft YaHei UI", 12), text_color=COLORS["muted"]).grid(row=0, column=1, sticky="e", padx=18)
 
     def _card(self, parent, title: str, subtitle: str | None = None) -> ctk.CTkFrame:
         card = ctk.CTkFrame(parent, corner_radius=26, fg_color=COLORS["card"], border_width=1, border_color=COLORS["line"])
         card.grid_columnconfigure(0, weight=1)
         ctk.CTkLabel(card, text=title, font=("Microsoft YaHei UI", 17, "bold"), text_color=COLORS["ink"]).grid(row=0, column=0, sticky="w", padx=22, pady=(20, 2))
         if subtitle:
-            ctk.CTkLabel(card, text=subtitle, font=("Microsoft YaHei UI", 12), text_color=COLORS["muted"], wraplength=360, justify="left").grid(row=1, column=0, sticky="w", padx=22, pady=(0, 14))
+            ctk.CTkLabel(card, text=subtitle, font=("Microsoft YaHei UI", 12), text_color=COLORS["muted"], wraplength=520, justify="left").grid(row=1, column=0, sticky="w", padx=22, pady=(0, 14))
         return card
 
     def _entry(self, parent, variable: ctk.StringVar, placeholder: str, show: str | None = None) -> ctk.CTkEntry:
@@ -365,19 +432,22 @@ class MainWindow(ctk.CTk):
 
         tools = ctk.CTkFrame(info_card, fg_color="transparent")
         tools.grid(row=8, column=0, sticky="ew", padx=22, pady=(0, 14))
-        ctk.CTkButton(tools, text="生成强密码", width=138, height=40, corner_radius=14, fg_color=COLORS["primary_soft"], hover_color="#d9e8ff", text_color=COLORS["primary"], font=("Microsoft YaHei UI", 13, "bold"), command=self._fill_password).pack(side="left")
-        ctk.CTkButton(tools, text="清空表单", width=118, height=40, corner_radius=14, fg_color="#f3f6fa", hover_color="#e8eef5", text_color=COLORS["ink"], font=("Microsoft YaHei UI", 13), command=self.clear_form).pack(side="left", padx=(10, 0))
+        HoverButton(tools, text="生成强密码", width=138, height=40, corner_radius=14, border_width=1, border_color="#b9d1f3", fg_color=COLORS["primary_soft"], hover_color="#cfe2ff", text_color=COLORS["primary"], font=("Microsoft YaHei UI", 13, "bold"), hover_border_color=COLORS["line_focus"], command=self._fill_password).pack(side="left")
+        HoverButton(tools, text="清空表单", width=118, height=40, corner_radius=14, border_width=1, border_color="#d4dfeb", fg_color="#ffffff", hover_color="#eef5ff", text_color=COLORS["ink"], font=("Microsoft YaHei UI", 13), hover_border_color=COLORS["line_focus"], command=self.clear_form).pack(side="left", padx=(10, 0))
 
         ctk.CTkLabel(info_card, text="备注", font=("Microsoft YaHei UI", 12, "bold"), text_color=COLORS["ink"]).grid(row=9, column=0, sticky="w", padx=22, pady=(0, 6))
         self.note_text = self._textbox(info_card, height=150)
         self.note_text.grid(row=10, column=0, sticky="nsew", padx=22, pady=(0, 22))
 
-        secret_card = self._card(self.add_page, "网站 Cookie / Token / 密钥文本", "可选。适合保存浏览器 Cookie、API Token、会话令牌或需要原样保留的长文本。")
+        secret_card = self._card(self.add_page, "Cookie / Token 长文本（可选）", "把浏览器 Cookie、Authorization: Bearer ...、API Token、会话令牌等长串贴在这里；只保存账号密码时可以留空。")
         secret_card.grid(row=0, column=1, sticky="nsew")
-        secret_card.grid_rowconfigure(2, weight=1)
+        secret_card.grid_rowconfigure(3, weight=1)
+        hint = ctk.CTkFrame(secret_card, corner_radius=16, fg_color="#eef6ff", border_width=1, border_color="#c6daf1")
+        hint.grid(row=2, column=0, sticky="ew", padx=22, pady=(0, 12))
+        ctk.CTkLabel(hint, text="常见粘贴内容：sessionid=...; token=... 或 Authorization: Bearer ...", font=("Microsoft YaHei UI", 12), text_color=COLORS["muted"], wraplength=420, justify="left").pack(anchor="w", padx=14, pady=10)
         self.cookie_text = self._textbox(secret_card, height=360, font_family="Consolas")
-        self.cookie_text.grid(row=2, column=0, sticky="nsew", padx=22, pady=(0, 16))
-        ctk.CTkButton(secret_card, text="加密保存这条记录", height=48, corner_radius=18, fg_color=COLORS["primary"], hover_color=COLORS["primary_hover"], font=("Microsoft YaHei UI", 14, "bold"), command=self.save_entry).grid(row=3, column=0, sticky="ew", padx=22, pady=(0, 22))
+        self.cookie_text.grid(row=3, column=0, sticky="nsew", padx=22, pady=(0, 16))
+        HoverButton(secret_card, text="加密保存这条记录", height=50, corner_radius=19, fg_color=COLORS["primary"], hover_color=COLORS["primary_hover"], font=("Microsoft YaHei UI", 14, "bold"), hover_scale=1.05, command=self.save_entry).grid(row=4, column=0, sticky="ew", padx=22, pady=(0, 22))
 
     def _build_search_page(self) -> None:
         self.search_page.grid_columnconfigure(0, weight=2)
@@ -394,7 +464,7 @@ class MainWindow(ctk.CTk):
         self.search_entry = self._entry(search_box, self.search_var, "输入名称或备注关键词")
         self.search_entry.grid(row=0, column=0, sticky="ew", padx=(0, 10))
         self.search_entry.bind("<KeyRelease>", lambda _event: self.refresh_results())
-        ctk.CTkButton(search_box, text="搜索", width=82, height=42, corner_radius=15, fg_color=COLORS["primary"], hover_color=COLORS["primary_hover"], font=("Microsoft YaHei UI", 13, "bold"), command=self.refresh_results).grid(row=0, column=1)
+        HoverButton(search_box, text="搜索", width=82, height=42, corner_radius=15, fg_color=COLORS["primary"], hover_color=COLORS["primary_hover"], font=("Microsoft YaHei UI", 13, "bold"), hover_scale=1.08, command=self.refresh_results).grid(row=0, column=1)
 
         self.results_frame = ctk.CTkScrollableFrame(list_card, corner_radius=18, fg_color="#f4f8fc", scrollbar_button_color="#c7d8ea", scrollbar_button_hover_color="#a8bfd9")
         self.results_frame.grid(row=3, column=0, sticky="nsew", padx=22, pady=(0, 22))
@@ -425,12 +495,13 @@ class MainWindow(ctk.CTk):
         self._copy_button(copy_row, "复制账号", lambda: self.copy_field("username")).pack(side="left")
         self._copy_button(copy_row, "复制密码", lambda: self.copy_field("password")).pack(side="left", padx=(8, 0))
         self._copy_button(copy_row, "复制 Cookie/Token", lambda: self.copy_field("cookie")).pack(side="left", padx=(8, 0))
-        ctk.CTkButton(copy_row, text="删除记录", width=110, height=38, corner_radius=14, fg_color=COLORS["danger_soft"], hover_color="#ffe0e0", text_color=COLORS["danger"], font=("Microsoft YaHei UI", 13, "bold"), command=self.delete_selected).pack(side="right")
+        HoverButton(copy_row, text="删除记录", width=110, height=38, corner_radius=14, border_width=1, border_color="#ffd1d1", fg_color=COLORS["danger_soft"], hover_color="#ffe0e0", text_color=COLORS["danger"], font=("Microsoft YaHei UI", 13, "bold"), hover_border_color=COLORS["danger"], command=self.delete_selected).pack(side="right")
 
         ctk.CTkLabel(detail_card, text="备注、网站 Cookie、Token 或密钥文本", font=("Microsoft YaHei UI", 12, "bold"), text_color=COLORS["ink"]).grid(row=6, column=0, sticky="w", padx=22, pady=(0, 6))
         self.detail_text = self._textbox(detail_card, height=260, font_family="Consolas")
         self.detail_text.grid(row=7, column=0, sticky="nsew", padx=22, pady=(0, 22))
-        set_textbox_text(self.detail_text, "从左侧选择一条记录后，这里会显示完整内容。", disabled=True)
+        bind_readonly_text(self.detail_text)
+        set_textbox_text(self.detail_text, "从左侧选择一条记录后，这里会显示完整内容。")
 
     def _readonly_field(self, parent, label: str) -> ctk.CTkFrame:
         box = ctk.CTkFrame(parent, fg_color="transparent")
@@ -442,9 +513,16 @@ class MainWindow(ctk.CTk):
         return box
 
     def _copy_button(self, parent, text: str, command) -> ctk.CTkButton:
-        return ctk.CTkButton(parent, text=text, width=108, height=38, corner_radius=14, fg_color="#eef5ff", hover_color="#dbeaff", text_color=COLORS["primary"], font=("Microsoft YaHei UI", 13, "bold"), command=command)
+        return HoverButton(parent, text=text, width=118, height=38, corner_radius=14, border_width=1, border_color="#bfd6f4", fg_color="#eef5ff", hover_color="#dbeaff", text_color=COLORS["primary"], font=("Microsoft YaHei UI", 13, "bold"), hover_scale=1.06, hover_border_color=COLORS["line_focus"], command=command)
 
     def _switch_page(self, page_name: str) -> None:
+        for name, button in self.nav_buttons.items():
+            if name == page_name:
+                button.configure(fg_color=COLORS["primary"], hover_color=COLORS["primary_hover"], text_color="#ffffff", border_color=COLORS["primary"])
+                button.normal_border_color = COLORS["primary"]
+            else:
+                button.configure(fg_color="#ffffff", hover_color=COLORS["surface_hover"], text_color=COLORS["ink"], border_color="#b8cae1")
+                button.normal_border_color = "#b8cae1"
         if page_name == "保存资料":
             self.add_page.tkraise()
             self.name_entry.focus_set()
@@ -527,7 +605,7 @@ class MainWindow(ctk.CTk):
         note = preview(entry.get("note", "无备注") or "无备注")
         updated = entry.get("updated_at", "")
         text = f"{name}\n{username}  ·  {updated}\n{note}"
-        button = ctk.CTkButton(self.results_frame, text=text, anchor="w", height=84, corner_radius=18, fg_color="#ffffff", hover_color="#eaf3ff", text_color=COLORS["ink"], border_width=1, border_color=COLORS["line"], font=("Microsoft YaHei UI", 12), command=lambda selected=entry: self._select_entry(selected))
+        button = HoverButton(self.results_frame, text=text, anchor="w", height=84, corner_radius=18, fg_color="#ffffff", hover_color="#e4f0ff", text_color=COLORS["ink"], border_width=1, border_color=COLORS["line"], font=("Microsoft YaHei UI", 12), hover_scale=1.03, hover_border_color=COLORS["line_focus"], command=lambda selected=entry: self._select_entry(selected))
         button.grid(row=row, column=0, sticky="ew", padx=6, pady=6)
         self.result_buttons[entry.get("id", "")] = button
 
@@ -540,8 +618,12 @@ class MainWindow(ctk.CTk):
         for current_id, button in self.result_buttons.items():
             if current_id == entry_id:
                 button.configure(fg_color="#e8f1ff", border_color=COLORS["line_focus"])
+                if isinstance(button, HoverButton):
+                    button.normal_border_color = COLORS["line_focus"]
             else:
                 button.configure(fg_color="#ffffff", border_color=COLORS["line"])
+                if isinstance(button, HoverButton):
+                    button.normal_border_color = COLORS["line"]
 
     def show_selected(self) -> None:
         if not self.selected_entry:
@@ -560,7 +642,7 @@ class MainWindow(ctk.CTk):
         if cookie:
             sections.append("网站 Cookie / Token / 密钥文本\n" + cookie)
         sections.append(f"创建时间：{entry.get('created_at', '')}\n更新时间：{entry.get('updated_at', '')}")
-        set_textbox_text(self.detail_text, "\n\n".join(sections), disabled=True)
+        set_textbox_text(self.detail_text, "\n\n".join(sections))
 
     @staticmethod
     def _set_entry_value(entry: ctk.CTkEntry, value: str) -> None:
@@ -595,7 +677,7 @@ class MainWindow(ctk.CTk):
         self.detail_title.configure(text="还没有选择记录")
         self._set_entry_value(self.detail_username.entry, "")
         self._set_entry_value(self.detail_password.entry, "")
-        set_textbox_text(self.detail_text, "从左侧选择一条记录后，这里会显示完整内容。", disabled=True)
+        set_textbox_text(self.detail_text, "从左侧选择一条记录后，这里会显示完整内容。")
         self.refresh_results()
         self.status_var.set(f"已删除：{name}")
 
