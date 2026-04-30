@@ -602,6 +602,8 @@ class MainWindow(ctk.CTk):
         self.results_frame = ctk.CTkScrollableFrame(list_card, corner_radius=18, fg_color="#f4f8fc", scrollbar_button_color="#b4cee9", scrollbar_button_hover_color="#8fb2d8")
         self.results_frame.grid(row=3, column=0, sticky="nsew", padx=22, pady=(0, 22))
         self.results_frame.grid_columnconfigure(0, weight=1)
+        self._bind_results_scroll(self.results_frame)
+        self._bind_results_scroll(self.results_frame._parent_canvas)
 
         detail_card = self._card(self.search_page, "查看完整信息", "详情文本支持直接拖选、Ctrl+A、Ctrl+C，也可以使用一键复制。")
         detail_card.grid(row=0, column=1, sticky="nsew")
@@ -644,6 +646,15 @@ class MainWindow(ctk.CTk):
         entry.grid(row=1, column=0, sticky="ew")
         box.entry = entry
         return box
+
+    def _bind_results_scroll(self, widget) -> None:
+        widget.bind("<MouseWheel>", self._on_results_mousewheel, add="+")
+
+    def _on_results_mousewheel(self, event) -> str:
+        steps = max(1, abs(event.delta) // 120) * 4
+        direction = -steps if event.delta > 0 else steps
+        self.results_frame._parent_canvas.yview_scroll(direction, "units")
+        return "break"
 
     def _copy_button(self, parent, text: str, command) -> ctk.CTkButton:
         return HoverButton(parent, text=text, width=118, height=38, corner_radius=14, border_width=1, border_color="#bfd6f4", fg_color="#eef5ff", hover_color="#dbeaff", text_color=COLORS["primary"], font=("Microsoft YaHei UI", 13, "bold"), hover_scale=1.06, hover_border_color=COLORS["line_focus"], command=command)
@@ -720,6 +731,7 @@ class MainWindow(ctk.CTk):
         if not matches:
             empty = ctk.CTkFrame(self.results_frame, corner_radius=18, fg_color="#ffffff", border_width=1, border_color=COLORS["line"])
             empty.grid(row=0, column=0, sticky="ew", padx=(8, 26), pady=8)
+            self._bind_results_scroll(empty)
             ctk.CTkLabel(empty, text="没有匹配记录", font=("Microsoft YaHei UI", 14, "bold"), text_color=COLORS["ink"]).pack(anchor="w", padx=16, pady=(16, 2))
             ctk.CTkLabel(empty, text="换一个关键词，或先保存一条资料。", font=("Microsoft YaHei UI", 12), text_color=COLORS["muted"]).pack(anchor="w", padx=16, pady=(0, 16))
         else:
@@ -778,6 +790,7 @@ class MainWindow(ctk.CTk):
             widget.bind("<Enter>", enter)
             widget.bind("<Leave>", leave)
             widget.bind("<Button-1>", click)
+            self._bind_results_scroll(widget)
 
     def _select_entry(self, entry: dict) -> None:
         self.selected_entry = entry
