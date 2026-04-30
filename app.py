@@ -193,9 +193,6 @@ def set_textbox_text(widget: ctk.CTkTextbox, text: str, disabled: bool = False) 
 class HoverButton(ctk.CTkButton):
     def __init__(self, *args, hover_scale: float = 1.04, hover_border_color: str | None = None, **kwargs):
         kwargs.setdefault("cursor", "hand2")
-        self.normal_width = kwargs.get("width")
-        self.normal_height = kwargs.get("height")
-        self.hover_scale = hover_scale
         self.hover_border_color = hover_border_color
         self.normal_border_color = kwargs.get("border_color")
         super().__init__(*args, **kwargs)
@@ -204,10 +201,6 @@ class HoverButton(ctk.CTkButton):
 
     def _enter(self, _event=None) -> None:
         updates = {}
-        if isinstance(self.normal_width, int) and self.normal_width > 0:
-            updates["width"] = int(self.normal_width * self.hover_scale)
-        if isinstance(self.normal_height, int) and self.normal_height > 0:
-            updates["height"] = int(self.normal_height * self.hover_scale)
         if self.hover_border_color:
             updates["border_color"] = self.hover_border_color
         if updates:
@@ -215,10 +208,6 @@ class HoverButton(ctk.CTkButton):
 
     def _leave(self, _event=None) -> None:
         updates = {}
-        if isinstance(self.normal_width, int):
-            updates["width"] = self.normal_width
-        if isinstance(self.normal_height, int):
-            updates["height"] = self.normal_height
         if self.normal_border_color:
             updates["border_color"] = self.normal_border_color
         if updates:
@@ -365,13 +354,14 @@ class MainWindow(ctk.CTk):
         nav.grid_propagate(False)
         nav.grid_columnconfigure(0, weight=1)
 
-        nav_left = ctk.CTkFrame(nav, fg_color="#e8f2ff", corner_radius=22, border_width=1, border_color="#bad0eb")
+        nav_left = ctk.CTkFrame(nav, width=392, height=50, fg_color="#e8f2ff", corner_radius=22, border_width=1, border_color="#bad0eb")
         nav_left.grid(row=0, column=0, sticky="w", padx=12, pady=10)
+        nav_left.grid_propagate(False)
         for index, page_name in enumerate(("保存资料", "搜索查看")):
             button = HoverButton(
                 nav_left,
                 text=page_name,
-                width=128,
+            width=184,
                 height=42,
                 corner_radius=19,
                 border_width=1,
@@ -384,7 +374,7 @@ class MainWindow(ctk.CTk):
                 hover_border_color=COLORS["line_focus"],
                 command=lambda name=page_name: self._switch_page(name),
             )
-            button.grid(row=0, column=index, padx=(4, 2), pady=4)
+            button.grid(row=0, column=index, padx=(5, 3), pady=4)
             self.nav_buttons[page_name] = button
 
         ctk.CTkLabel(nav, text="详情可拖选复制，也可点一键复制", font=("Microsoft YaHei UI", 12), text_color=COLORS["muted"]).grid(row=0, column=1, sticky="e", padx=18)
