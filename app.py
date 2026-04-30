@@ -196,6 +196,13 @@ def preview(text: str, limit: int = 52) -> str:
     return clean if len(clean) <= limit else clean[: limit - 1] + "..."
 
 
+def card_preview(text: str, limit: int = 34) -> str:
+    clean = " ".join(text.split())
+    if not clean:
+        return "无备注"
+    return clean if len(clean) <= limit else clean[: limit - 1] + "..."
+
+
 def make_password(length: int = 20) -> str:
     alphabet = string.ascii_letters + string.digits + "!@#$%^&*_-+=?"
     return "".join(secrets.choice(alphabet) for _ in range(length))
@@ -734,9 +741,9 @@ class MainWindow(ctk.CTk):
     def _result_card(self, row: int, entry: dict) -> None:
         name = entry.get("name", "未命名")
         username = entry.get("username", "未填写账号") or "未填写账号"
-        note = preview(entry.get("note", "无备注") or "无备注")
+        note = card_preview(entry.get("note", ""))
         updated = entry.get("updated_at", "")
-        card = ctk.CTkFrame(self.results_frame, height=118, corner_radius=20, fg_color="#ffffff", border_width=1, border_color=COLORS["line"], cursor="hand2")
+        card = ctk.CTkFrame(self.results_frame, height=128, corner_radius=20, fg_color="#ffffff", border_width=1, border_color=COLORS["line"], cursor="hand2")
         card.grid(row=row, column=0, sticky="ew", padx=(8, 26), pady=(8, 6))
         card.grid_propagate(False)
         card.grid_columnconfigure(1, weight=1)
@@ -750,7 +757,11 @@ class MainWindow(ctk.CTk):
 
         ctk.CTkFrame(card, height=1, fg_color="#e1eaf5").grid(row=2, column=0, columnspan=4, sticky="ew", padx=16, pady=(0, 8))
         ctk.CTkLabel(card, text="备注", width=42, height=22, corner_radius=11, fg_color="#fff7e8", text_color="#9a650f", font=("Microsoft YaHei UI", 11, "bold")).grid(row=3, column=0, padx=(16, 10), pady=(0, 12), sticky="w")
-        ctk.CTkLabel(card, text=note, anchor="w", font=("Microsoft YaHei UI", 12), text_color=COLORS["muted"], wraplength=300, justify="left").grid(row=3, column=1, columnspan=3, padx=(0, 16), pady=(0, 12), sticky="ew")
+        note_frame = ctk.CTkFrame(card, height=26, fg_color="transparent")
+        note_frame.grid(row=3, column=1, columnspan=3, padx=(0, 16), pady=(0, 12), sticky="ew")
+        note_frame.grid_propagate(False)
+        note_frame.grid_columnconfigure(0, weight=1)
+        ctk.CTkLabel(note_frame, text=note, anchor="w", font=("Microsoft YaHei UI", 12), text_color=COLORS["muted"], justify="left").grid(row=0, column=0, sticky="ew")
 
         self._bind_result_card(card, entry)
         self.result_cards[entry.get("id", "")] = card
