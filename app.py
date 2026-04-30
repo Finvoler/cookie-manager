@@ -325,9 +325,6 @@ class LoginWindow(ctk.CTk):
             self.after(250, self._try_auto_unlock)
 
     def _build(self) -> None:
-        bg = GradientCanvas(self, ("#e9f6ff", "#f7efff", "#fff8ed"))
-        bg.place(relx=0, rely=0, relwidth=1, relheight=1)
-
         card = ctk.CTkFrame(self, width=430, height=390, corner_radius=30, fg_color="#fbfdff", border_width=1, border_color="#dce7f3")
         card.place(relx=0.5, rely=0.5, anchor="center")
         card.grid_propagate(False)
@@ -435,9 +432,6 @@ class MainWindow(ctk.CTk):
         self.refresh_results()
 
     def _build(self) -> None:
-        bg = GradientCanvas(self, ("#dcefff", "#f2f7ff", "#fff4df"))
-        bg.place(relx=0, rely=0, relwidth=1, relheight=1)
-
         shell = ctk.CTkFrame(self, fg_color="transparent")
         shell.pack(fill="both", expand=True, padx=28, pady=24)
         shell.grid_columnconfigure(0, weight=1)
