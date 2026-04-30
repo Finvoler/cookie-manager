@@ -299,8 +299,9 @@ class MainWindow(ctk.CTk):
         self.status_var = ctk.StringVar(value=f"已载入 {len(self.vault.entries)} 条记录")
         self.show_form_password = ctk.BooleanVar(value=False)
         self.show_detail_password = ctk.BooleanVar(value=False)
-        self.result_buttons: dict[str, ctk.CTkButton] = {}
+        self.result_cards: dict[str, ctk.CTkFrame] = {}
         self.nav_buttons: dict[str, HoverButton] = {}
+        self.toast_after_id: str | None = None
 
         self.title(APP_NAME)
         self.geometry("1180x760")
@@ -332,6 +333,7 @@ class MainWindow(ctk.CTk):
 
         self._build_add_page()
         self._build_search_page()
+        self._build_toast()
         self._switch_page("保存资料")
 
     def _build_header(self, shell: ctk.CTkFrame) -> None:
@@ -378,6 +380,20 @@ class MainWindow(ctk.CTk):
             self.nav_buttons[page_name] = button
 
         ctk.CTkLabel(nav, text="详情可拖选复制，也可点一键复制", font=("Microsoft YaHei UI", 12), text_color=COLORS["muted"]).grid(row=0, column=1, sticky="e", padx=18)
+
+    def _build_toast(self) -> None:
+        self.toast = ctk.CTkFrame(self, corner_radius=18, fg_color="#102033", border_width=1, border_color="#3f5572")
+        self.toast_label = ctk.CTkLabel(self.toast, text="", font=("Microsoft YaHei UI", 13, "bold"), text_color="#ffffff")
+        self.toast_label.pack(padx=18, pady=10)
+        self.toast.place_forget()
+
+    def show_toast(self, message: str) -> None:
+        if self.toast_after_id:
+            self.after_cancel(self.toast_after_id)
+        self.toast_label.configure(text=message)
+        self.toast.place(relx=0.5, rely=0.92, anchor="center")
+        self.toast.lift()
+        self.toast_after_id = self.after(1600, self.toast.place_forget)
 
     def _card(self, parent, title: str, subtitle: str | None = None) -> ctk.CTkFrame:
         card = ctk.CTkFrame(parent, corner_radius=26, fg_color=COLORS["card"], border_width=1, border_color=COLORS["line"])
@@ -456,7 +472,7 @@ class MainWindow(ctk.CTk):
         self.search_entry.bind("<KeyRelease>", lambda _event: self.refresh_results())
         HoverButton(search_box, text="搜索", width=82, height=42, corner_radius=15, fg_color=COLORS["primary"], hover_color=COLORS["primary_hover"], font=("Microsoft YaHei UI", 13, "bold"), hover_scale=1.08, command=self.refresh_results).grid(row=0, column=1)
 
-        self.results_frame = ctk.CTkScrollableFrame(list_card, corner_radius=18, fg_color="#f4f8fc", scrollbar_button_color="#c7d8ea", scrollbar_button_hover_color="#a8bfd9")
+        self.results_frame = ctk.CTkScrollableFrame(list_card, corner_radius=18, fg_color="#f4f8fc", scrollbar_button_color="#b4cee9", scrollbar_button_hover_color="#8fb2d8")
         self.results_frame.grid(row=3, column=0, sticky="nsew", padx=22, pady=(0, 22))
         self.results_frame.grid_columnconfigure(0, weight=1)
 
@@ -565,7 +581,7 @@ class MainWindow(ctk.CTk):
         keyword = self.search_var.get().strip().casefold()
         for child in self.results_frame.winfo_children():
             child.destroy()
-        self.result_buttons.clear()
+        self.result_cards.clear()
 
         matches = []
         for entry in sorted(self.vault.entries, key=lambda item: item.get("updated_at", ""), reverse=True):
@@ -576,7 +592,7 @@ class MainWindow(ctk.CTk):
 
         if not matches:
             empty = ctk.CTkFrame(self.results_frame, corner_radius=18, fg_color="#ffffff", border_width=1, border_color=COLORS["line"])
-            empty.grid(row=0, column=0, sticky="ew", padx=6, pady=6)
+            empty.grid(row=0, column=0, sticky="ew", padx=(8, 26), pady=8)
             ctk.CTkLabel(empty, text="没有匹配记录", font=("Microsoft YaHei UI", 14, "bold"), text_color=COLORS["ink"]).pack(anchor="w", padx=16, pady=(16, 2))
             ctk.CTkLabel(empty, text="换一个关键词，或先保存一条资料。", font=("Microsoft YaHei UI", 12), text_color=COLORS["muted"]).pack(anchor="w", padx=16, pady=(0, 16))
         else:
@@ -594,10 +610,43 @@ class MainWindow(ctk.CTk):
         username = entry.get("username", "未填写账号") or "未填写账号"
         note = preview(entry.get("note", "无备注") or "无备注")
         updated = entry.get("updated_at", "")
-        text = f"{name}\n{username}  ·  {updated}\n{note}"
-        button = HoverButton(self.results_frame, text=text, anchor="w", height=84, corner_radius=18, fg_color="#ffffff", hover_color="#e4f0ff", text_color=COLORS["ink"], border_width=1, border_color=COLORS["line"], font=("Microsoft YaHei UI", 12), hover_scale=1.03, hover_border_color=COLORS["line_focus"], command=lambda selected=entry: self._select_entry(selected))
-        button.grid(row=row, column=0, sticky="ew", padx=6, pady=6)
-        self.result_buttons[entry.get("id", "")] = button
+        card = ctk.CTkFrame(self.results_frame, height=118, corner_radius=20, fg_color="#ffffff", border_width=1, border_color=COLORS["line"], cursor="hand2")
+        card.grid(row=row, column=0, sticky="ew", padx=(8, 26), pady=(8, 6))
+        card.grid_propagate(False)
+        card.grid_columnconfigure(1, weight=1)
+
+        ctk.CTkLabel(card, text="名称", width=42, height=24, corner_radius=12, fg_color="#eaf2ff", text_color=COLORS["primary"], font=("Microsoft YaHei UI", 11, "bold")).grid(row=0, column=0, padx=(16, 10), pady=(14, 4), sticky="w")
+        ctk.CTkLabel(card, text=name, anchor="w", font=("Microsoft YaHei UI", 15, "bold"), text_color=COLORS["ink"]).grid(row=0, column=1, columnspan=3, padx=(0, 16), pady=(14, 4), sticky="ew")
+
+        ctk.CTkLabel(card, text="账号", width=42, height=22, corner_radius=11, fg_color="#f1f5f9", text_color=COLORS["muted"], font=("Microsoft YaHei UI", 11, "bold")).grid(row=1, column=0, padx=(16, 10), pady=(0, 8), sticky="w")
+        ctk.CTkLabel(card, text=username, anchor="w", font=("Microsoft YaHei UI", 12), text_color=COLORS["ink"]).grid(row=1, column=1, padx=(0, 8), pady=(0, 8), sticky="ew")
+        ctk.CTkLabel(card, text=updated, anchor="e", font=("Microsoft YaHei UI", 11), text_color=COLORS["muted"]).grid(row=1, column=2, columnspan=2, padx=(8, 16), pady=(0, 8), sticky="e")
+
+        ctk.CTkFrame(card, height=1, fg_color="#e1eaf5").grid(row=2, column=0, columnspan=4, sticky="ew", padx=16, pady=(0, 8))
+        ctk.CTkLabel(card, text="备注", width=42, height=22, corner_radius=11, fg_color="#fff7e8", text_color="#9a650f", font=("Microsoft YaHei UI", 11, "bold")).grid(row=3, column=0, padx=(16, 10), pady=(0, 12), sticky="w")
+        ctk.CTkLabel(card, text=note, anchor="w", font=("Microsoft YaHei UI", 12), text_color=COLORS["muted"], wraplength=300, justify="left").grid(row=3, column=1, columnspan=3, padx=(0, 16), pady=(0, 12), sticky="ew")
+
+        self._bind_result_card(card, entry)
+        self.result_cards[entry.get("id", "")] = card
+
+    def _bind_result_card(self, card: ctk.CTkFrame, entry: dict) -> None:
+        entry_id = entry.get("id", "")
+
+        def enter(_event=None) -> None:
+            if not self.selected_entry or self.selected_entry.get("id") != entry_id:
+                card.configure(fg_color="#f7fbff", border_color=COLORS["line_focus"])
+
+        def leave(_event=None) -> None:
+            if not self.selected_entry or self.selected_entry.get("id") != entry_id:
+                card.configure(fg_color="#ffffff", border_color=COLORS["line"])
+
+        def click(_event=None) -> None:
+            self._select_entry(entry)
+
+        for widget in (card, *card.winfo_children()):
+            widget.bind("<Enter>", enter)
+            widget.bind("<Leave>", leave)
+            widget.bind("<Button-1>", click)
 
     def _select_entry(self, entry: dict) -> None:
         self.selected_entry = entry
@@ -605,15 +654,11 @@ class MainWindow(ctk.CTk):
         self._highlight_result(entry.get("id", ""))
 
     def _highlight_result(self, entry_id: str) -> None:
-        for current_id, button in self.result_buttons.items():
+        for current_id, card in self.result_cards.items():
             if current_id == entry_id:
-                button.configure(fg_color="#e8f1ff", border_color=COLORS["line_focus"])
-                if isinstance(button, HoverButton):
-                    button.normal_border_color = COLORS["line_focus"]
+                card.configure(fg_color="#e8f1ff", border_color=COLORS["primary"])
             else:
-                button.configure(fg_color="#ffffff", border_color=COLORS["line"])
-                if isinstance(button, HoverButton):
-                    button.normal_border_color = COLORS["line"]
+                card.configure(fg_color="#ffffff", border_color=COLORS["line"])
 
     def show_selected(self) -> None:
         if not self.selected_entry:
@@ -651,7 +696,10 @@ class MainWindow(ctk.CTk):
             return
         self.clipboard_clear()
         self.clipboard_append(value)
-        self.status_var.set("已复制到剪贴板")
+        labels = {"username": "账号", "password": "密码", "cookie": "Cookie/Token"}
+        message = f"{labels.get(field, '内容')}已复制"
+        self.status_var.set(message)
+        self.show_toast(message)
 
     def delete_selected(self) -> None:
         if not self.selected_entry:
