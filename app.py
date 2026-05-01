@@ -651,7 +651,7 @@ class MainWindow(ctk.CTk):
         widget.bind("<MouseWheel>", self._on_results_mousewheel, add="+")
 
     def _on_results_mousewheel(self, event) -> str:
-        steps = max(1, abs(event.delta) // 120) * 4
+        steps = max(1, abs(event.delta) // 120) * 80
         direction = -steps if event.delta > 0 else steps
         self.results_frame._parent_canvas.yview_scroll(direction, "units")
         return "break"
